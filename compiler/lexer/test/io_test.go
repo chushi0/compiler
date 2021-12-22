@@ -23,6 +23,7 @@ func TestIO_NormalReadFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer pio.Close()
 	rns := make([]rune, 0)
 	for {
 		rn, err := pio.ReadChar()
@@ -46,6 +47,7 @@ func TestIO_LineColumn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer pio.Close()
 
 	// 读取15个字符后，Line=1，Column=15
 	for i := 0; i < 15; i++ {
@@ -87,6 +89,7 @@ func TestIO_SaveRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer pio.Close()
 
 	// 读30个字符
 	for i := 0; i < 30; i++ {
@@ -127,6 +130,7 @@ func TestIO_SaveRestore2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer pio.Close()
 
 	// 读30个字符
 	for i := 0; i < 30; i++ {
@@ -176,6 +180,7 @@ func TestIO_SaveRestore3(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer pio.Close()
 
 	// 读30个字符
 	for i := 0; i < 30; i++ {
@@ -224,6 +229,7 @@ func TestIO_CRLF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer pio.Close()
 
 	// 读27个字符
 	for i := 0; i < 27; i++ {

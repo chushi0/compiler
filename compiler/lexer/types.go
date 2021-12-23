@@ -30,23 +30,25 @@ type IO struct {
 // 有穷自动状态机
 // 包含NFA和DFA
 type FiniteAutomaton struct {
-	StateCount     int              // 状态数
-	JumpTable      map[int]*JumpMap // 转移函数
-	AcceptState    []int            // 接受的状态数
-	AcceptStateTag map[int]string   // 接受的状态标签
+	StateCount     int            // 状态数
+	JumpTables     [][]*JumpMap   // 转移函数
+	AcceptStates   []int          // 接受的状态数
+	AcceptStateTag map[int]string // 接受的状态标签
 }
 
 type JumpMap struct {
+	// 字符范围开始与字符范围结束均为 0 时，表示无字符跳转
+	// 仅在 NFA 中有效
 	RuneStart rune // 字符范围开始（包含）
-	RuneEnd   rune // 字符范围结束（包含）
+	RuneEnd   rune // 字符范围结束（不包含）
 	Target    int  // 跳转到的状态
 }
 
 // 词法分析器
 type Lexer struct {
-	Io    *IO
-	DFA   *FiniteAutomaton
-	State int // 当前状态
+	Io    *IO              // 文件 IO 接口
+	DFA   *FiniteAutomaton // DFA
+	State int              // DFA 当前状态
 }
 
 // 词法分析器读到的内容

@@ -3,6 +3,8 @@ package lexer
 import (
 	"bufio"
 	"os"
+
+	"github.com/chushi0/compiler/utils/set"
 )
 
 // IO
@@ -32,16 +34,20 @@ type IO struct {
 type FiniteAutomaton struct {
 	StateCount     int            // 状态数
 	JumpTables     [][]*JumpMap   // 转移函数
-	AcceptStates   []int          // 接受的状态数
+	AcceptStates   set.IntSet     // 接受的状态
 	AcceptStateTag map[int]string // 接受的状态标签
 }
 
-type JumpMap struct {
+type RuneRange struct {
 	// 字符范围开始与字符范围结束均为 0 时，表示无字符跳转
 	// 仅在 NFA 中有效
 	RuneStart rune // 字符范围开始（包含）
 	RuneEnd   rune // 字符范围结束（不包含）
-	Target    int  // 跳转到的状态
+}
+
+type JumpMap struct {
+	RuneRange
+	Target int // 跳转到的状态
 }
 
 // 词法分析器

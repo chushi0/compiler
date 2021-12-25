@@ -70,6 +70,20 @@ func (pio *IO) ReadChar() (rune, error) {
 	return rn, nil
 }
 
+func (pio *IO) Lookup() (rune, error) {
+	if pio.RuneBufferIndex >= pio.RuneValidCount {
+		err := pio.fillBuffer()
+		if err != nil {
+			return 0, err
+		}
+	}
+	rn := pio.RuneBuffer[pio.RuneBufferIndex]
+	if rn == '\r' {
+		return '\n', nil
+	}
+	return rn, nil
+}
+
 func (pio *IO) Save() {
 	pio.SaveLine = pio.Line
 	pio.SaveColumn = pio.Column

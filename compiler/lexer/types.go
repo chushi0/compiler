@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 
+	"github.com/chushi0/compiler/compiler/types"
 	"github.com/chushi0/compiler/utils/set"
 )
 
@@ -52,9 +53,9 @@ type JumpMap struct {
 
 // 词法分析器
 type Lexer struct {
-	Io    *IO              // 文件 IO 接口
-	DFA   *FiniteAutomaton // DFA
-	State int              // DFA 当前状态
+	ErrorContainer types.ErrorContainer // 错误
+	Io             *IO                  // 文件 IO 接口
+	DFA            *FiniteAutomaton     // DFA
 }
 
 // 词法分析器读到的内容
@@ -62,4 +63,7 @@ type Token struct {
 	RawValue string // 原始值
 	State    int    // 接受的状态
 	Tag      string // tag
+	Line     int    // 行号
+	Column   int    // 列号
+	File     string // 文件名
 }

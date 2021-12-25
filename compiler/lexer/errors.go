@@ -1,6 +1,14 @@
 package lexer
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+var (
+	FinateAutomatonInputError = errors.New("finate automaton not accpet this input")
+	RegexpParseError          = errors.New("parse fail")
+)
 
 type IOError struct {
 	Original error

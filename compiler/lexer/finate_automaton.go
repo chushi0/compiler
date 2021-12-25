@@ -1,7 +1,9 @@
 package lexer
 
 import (
+	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/chushi0/compiler/utils/set"
 	utilslice "github.com/chushi0/compiler/utils/util_slice"
@@ -237,6 +239,204 @@ func NewFinateAutomaton(runeRange *RuneRange) *FiniteAutomaton {
 	}
 }
 
+func buildFinateAutomatonFromBracket(content []rune) (fa *FiniteAutomaton, err error) {
+	errBadBracket := fmt.Errorf("bad bracket regexp: %s", string(content))
+	offset := 0
+
+	getRune := func() (rune, error) {
+		if offset >= len(content) {
+			return 0, errBadBracket
+		}
+		if content[offset] == '\\' {
+			offset++
+			if offset >= len(content) {
+				return 0, errBadBracket
+			}
+			if content[offset] == 'u' {
+				if offset+4 >= len(content) {
+					return 0, errBadBracket
+				}
+				n, err := strconv.ParseInt(string(content[offset:offset+4]), 16, 64)
+				if err != nil {
+					return 0, fmt.Errorf("parse int error: %v", string(content[offset:offset+4]))
+				}
+				offset += 5
+				return rune(n), nil
+			}
+		}
+		offset++
+		return content[offset-1], nil
+	}
+
+	runeRange := &RuneRange{}
+
+	runeRange.RuneStart, err = getRune()
+	if err != nil {
+		return
+	}
+	if len(content) <= offset || content[offset] != '-' {
+		return nil, errBadBracket
+	}
+	offset++
+	runeRange.RuneEnd, err = getRune()
+	if err != nil {
+		return
+	}
+	runeRange.RuneEnd++
+	if len(content) != offset {
+		return nil, errBadBracket
+	}
+
+	return NewFinateAutomaton(runeRange), nil
+}
+
+// 从正则表达式构造 NFA
+// 语法：
+// 匹配单字符：直接写
+// 匹配范围：[1-9]、[a-z]，不可写为[12-9]、[a-zA-Z]等
+// 或 1|2
+// 连接：不写默认为连接，优先于或
+// 克林闭包：*，写在后面，优先于连接
+// 括号：改变优先级
+// \：转义，例如 \[、\*、\|、\\ 等
+// \u1234 表示用后面的 unicode
+// . 匹配任意字符
+func NewFinateAutomatonFromRegexp(regexp []rune) (*FiniteAutomaton, error) {
+	list := make([]interface{}, 0)
+	operators := make([]rune, 0)
+	needOperator := false
+	for i := 0; i < len(regexp); i++ {
+		rn := regexp[i]
+		switch rn {
+		case '[':
+			i++
+			start := i
+			for i < len(regexp) && regexp[i] != ']' {
+				i++
+			}
+			if i >= len(regexp) {
+				return nil, fmt.Errorf("%w: bracket mismatch (start at %d)", RegexpParseError, start)
+			}
+			content := regexp[start:i]
+			fa, err := buildFinateAutomatonFromBracket(content)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %s (at %d)", RegexpParseError, err.Error(), i)
+			}
+			if needOperator {
+				operators = append(operators, '+')
+			}
+			list = append(list, fa)
+			needOperator = true
+		case '*':
+			list = append(list, '*')
+		case '|':
+			if !needOperator {
+				return nil, fmt.Errorf("%w: current not need operator (at %d)", RegexpParseError, i)
+			}
+			for len(operators) > 0 && operators[len(operators)-1] == '+' {
+				operators = operators[:len(operators)-1]
+				list = append(list, '+')
+			}
+			operators = append(operators, '|')
+			needOperator = false
+		case '(':
+			if needOperator {
+				operators = append(operators, '+')
+			}
+			operators = append(operators, '(')
+			needOperator = false
+		case ')':
+			for {
+				if len(operators) == 0 {
+					return nil, fmt.Errorf("%w: bracket mismatch (at %d, left bracket not found)", RegexpParseError, i)
+				}
+				if operators[len(operators)-1] == '(' {
+					break
+				}
+				list = append(list, operators[len(operators)-1])
+				operators = operators[:len(operators)-1]
+			}
+			needOperator = true
+		case '\\':
+			if needOperator {
+				operators = append(operators, '+')
+			}
+			needOperator = true
+			i++
+			rn := regexp[i]
+			if rn != 'u' {
+				list = append(list, NewFinateAutomaton(&RuneRange{
+					RuneStart: rn,
+					RuneEnd:   rn + 1,
+				}))
+			} else {
+				i++
+				rn, err := strconv.ParseInt(string(regexp[i:i+4]), 16, 64)
+				if err != nil {
+					return nil, fmt.Errorf("%w: parse int error: %v (at %d)", RegexpParseError, string(regexp[i:i+4]), i)
+				}
+				list = append(list, NewFinateAutomaton(&RuneRange{
+					RuneStart: rune(rn),
+					RuneEnd:   rune(rn + 1),
+				}))
+				i += 4
+			}
+		default:
+			if needOperator {
+				operators = append(operators, '+')
+			}
+			needOperator = true
+			list = append(list, NewFinateAutomaton(&RuneRange{
+				RuneStart: rn,
+				RuneEnd:   rn + 1,
+			}))
+		}
+	}
+	for len(operators) > 0 {
+		op := operators[len(operators)-1]
+		if op == '(' {
+			return nil, fmt.Errorf("%w: bracket mismatch (right bracket not found)", RegexpParseError)
+		}
+		operators = operators[:len(operators)-1]
+		list = append(list, op)
+	}
+
+	result := make([]*FiniteAutomaton, 0)
+	for _, item := range list {
+		if fa, ok := item.(*FiniteAutomaton); ok {
+			result = append(result, fa)
+			continue
+		}
+		if op, ok := item.(rune); ok {
+			switch op {
+			case '|':
+				if len(result) < 2 {
+					return nil, fmt.Errorf("%w: error while mergeOr", RegexpParseError)
+				}
+				result = append(result[:len(result)-2], result[len(result)-2].MergeOr(result[len(result)-1]))
+			case '+':
+				if len(result) < 2 {
+					return nil, fmt.Errorf("%w: error while mergeConnect", RegexpParseError)
+				}
+				result = append(result[:len(result)-2], result[len(result)-2].MergeConnect(result[len(result)-1]))
+			case '*':
+				if len(result) < 1 {
+					return nil, fmt.Errorf("%w: error while mergeKleene", RegexpParseError)
+				}
+				result[len(result)-1] = result[len(result)-1].MergeKleene()
+			default:
+				panic(fmt.Sprintf("unknown op: %v", op))
+			}
+			continue
+		}
+		panic(fmt.Sprintf("unknown type: %+v", item))
+	}
+	if len(result) == 1 {
+		return result[0], nil
+	}
+	return nil, fmt.Errorf("%w unknown error", RegexpParseError)
+}
+
 // 能够从 NFA 的指定状态只通过ε转换到达的 NFA 状态的集合
 func (fa *FiniteAutomaton) closure(state int) set.IntSet {
 	res := set.NewIntSet()
@@ -354,4 +554,16 @@ func (fa *FiniteAutomaton) AsDFA() *FiniteAutomaton {
 	}
 	result.StateCount = len(states)
 	return result
+}
+
+// 根据输入计算自动机的下一个状态
+// 假定自动机为 DFA
+func (fa *FiniteAutomaton) NextState(state int, input rune) (int, error) {
+	jumpTable := fa.JumpTables[state]
+	for _, jumpMap := range jumpTable {
+		if jumpMap.RuneStart <= input && jumpMap.RuneEnd > input {
+			return jumpMap.Target, nil
+		}
+	}
+	return -1, fmt.Errorf("%w: %v", FinateAutomatonInputError, input)
 }

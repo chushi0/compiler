@@ -36,6 +36,9 @@ scan_start:
 		rn, err := lexer.Io.ReadChar()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if len(rawVal) == 0 {
+					return nil
+				}
 				break
 			}
 			lexer.ErrorContainer.Fatal = append(lexer.ErrorContainer.Fatal, &types.Error{
@@ -45,11 +48,11 @@ scan_start:
 			})
 			return nil
 		}
-		state, err := lexer.DFA.NextState(state, rn)
+		rawVal += string(rn)
+		state, err = lexer.DFA.NextState(state, rn)
 		if err != nil {
 			break
 		}
-		rawVal += string(rn)
 		if lexer.DFA.AcceptStates.Contains(state) {
 			lexer.Io.Save()
 			token.RawValue = rawVal
@@ -78,7 +81,8 @@ scan_start:
 // 清除空白字符
 func (lexer *Lexer) clearSpace() error {
 	for {
-		rn, err := lexer.Io.Lookup()
+		lexer.Io.Save()
+		rn, err := lexer.Io.ReadChar()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return nil
@@ -86,11 +90,8 @@ func (lexer *Lexer) clearSpace() error {
 			return err
 		}
 		if !isSpace(rn) {
+			lexer.Io.Restore()
 			return nil
-		}
-		_, err = lexer.Io.ReadChar()
-		if err != nil {
-			return err
 		}
 	}
 }

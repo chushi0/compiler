@@ -93,7 +93,7 @@ func (fa *FiniteAutomaton) MergeOr(o *FiniteAutomaton) *FiniteAutomaton {
 	}
 	for i := 1; i < o.StateCount; i++ {
 		jumpTable := make([]*JumpMap, 0)
-		for _, jumpMap := range fa.JumpTables[i] {
+		for _, jumpMap := range o.JumpTables[i] {
 			jumpTable = append(jumpTable, &JumpMap{
 				RuneRange: jumpMap.RuneRange,
 				Target:    jumpMap.Target + fa.StateCount - 1,
@@ -244,6 +244,13 @@ func NewFinateAutomaton(runeRange *RuneRange) *FiniteAutomaton {
 }
 
 func buildFinateAutomatonFromBracket(content []rune) (fa *FiniteAutomaton, err error) {
+	if len(content) == 0 {
+		return NewFinateAutomaton(&RuneRange{
+			RuneStart: 0,
+			RuneEnd:   0,
+		}), nil
+	}
+
 	errBadBracket := fmt.Errorf("bad bracket regexp: %s", string(content))
 	offset := 0
 
@@ -514,7 +521,18 @@ func (fa *FiniteAutomaton) splitRange() []*RuneRange {
 	sort.Slice(ranges, func(i, j int) bool {
 		return ranges[i].RuneStart < ranges[j].RuneStart
 	})
-	return ranges
+	duplicateRemoval := make([]*RuneRange, 0)
+	for _, item := range ranges {
+		if len(duplicateRemoval) == 0 {
+			duplicateRemoval = append(duplicateRemoval, item)
+			continue
+		}
+		if duplicateRemoval[len(duplicateRemoval)-1].RuneStart == item.RuneStart {
+			continue
+		}
+		duplicateRemoval = append(duplicateRemoval, item)
+	}
+	return duplicateRemoval
 }
 
 // NFA 转 DFA
@@ -585,4 +603,27 @@ func (fa *FiniteAutomaton) NextState(state int, input rune) (int, error) {
 		}
 	}
 	return -1, fmt.Errorf("%w: %v", ErrorFinateAutomatonInput, string(input))
+}
+
+// 导出可视化的自动机
+func (fa *FiniteAutomaton) Dump() string {
+	result := fmt.Sprintf("StateCount: %d\nAcceptStates:\n", fa.StateCount)
+	for state := 0; state < fa.StateCount; state++ {
+		if fa.AcceptStates.Contains(state) {
+			result += fmt.Sprintf("  %d (%s)\n", state, fa.AcceptStateTag[state])
+		}
+	}
+	result += "JumpTable:\n"
+	for state, jumpTable := range fa.JumpTables {
+		result += fmt.Sprintf("  state %d:", state)
+		if fa.AcceptStates.Contains(state) {
+			result += fmt.Sprintf(" (%s)", fa.AcceptStateTag[state])
+		}
+		result += "\n"
+		for _, jumpMap := range jumpTable {
+			result += fmt.Sprintf("    [%s, %s] (%d, %d) -> %d\n", string(jumpMap.RuneStart), string(jumpMap.RuneEnd-1),
+				jumpMap.RuneStart, jumpMap.RuneEnd-1, jumpMap.Target)
+		}
+	}
+	return result
 }

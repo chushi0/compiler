@@ -6,8 +6,8 @@ import (
 )
 
 var (
-	FinateAutomatonInputError = errors.New("finate automaton not accpet this input")
-	RegexpParseError          = errors.New("parse fail")
+	ErrorFinateAutomatonInput = errors.New("finate automaton not accpet this input")
+	ErrorRegexpParse          = errors.New("parse fail")
 )
 
 type IOError struct {

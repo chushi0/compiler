@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"unicode/utf8"
 
 	"github.com/chushi0/compiler/utils/set"
 	utilslice "github.com/chushi0/compiler/utils/util_slice"
@@ -69,6 +70,7 @@ func (fa *FiniteAutomaton) MergeOr(o *FiniteAutomaton) *FiniteAutomaton {
 	result := &FiniteAutomaton{
 		StateCount:     stateCount,
 		JumpTables:     make([][]*JumpMap, stateCount),
+		AcceptStates:   set.NewIntSet(),
 		AcceptStateTag: make(map[int]string),
 	}
 
@@ -131,6 +133,7 @@ func (fa *FiniteAutomaton) MergeConnect(o *FiniteAutomaton) *FiniteAutomaton {
 	result := &FiniteAutomaton{
 		StateCount:     stateCount,
 		JumpTables:     make([][]*JumpMap, stateCount),
+		AcceptStates:   set.NewIntSet(),
 		AcceptStateTag: make(map[int]string),
 	}
 
@@ -147,7 +150,7 @@ func (fa *FiniteAutomaton) MergeConnect(o *FiniteAutomaton) *FiniteAutomaton {
 	}
 	for i := 0; i < o.StateCount; i++ {
 		jumpTable := make([]*JumpMap, 0)
-		for _, jumpMap := range fa.JumpTables[i] {
+		for _, jumpMap := range o.JumpTables[i] {
 			jumpTable = append(jumpTable, &JumpMap{
 				RuneRange: jumpMap.RuneRange,
 				Target:    jumpMap.Target + fa.StateCount,
@@ -231,6 +234,7 @@ func NewFinateAutomaton(runeRange *RuneRange) *FiniteAutomaton {
 					Target:    1,
 				},
 			},
+			{},
 		},
 		AcceptStates: set.NewIntSet(1),
 		AcceptStateTag: map[int]string{
@@ -315,12 +319,12 @@ func NewFinateAutomatonFromRegexp(regexp []rune) (*FiniteAutomaton, error) {
 				i++
 			}
 			if i >= len(regexp) {
-				return nil, fmt.Errorf("%w: bracket mismatch (start at %d)", RegexpParseError, start)
+				return nil, fmt.Errorf("%w: bracket mismatch (start at %d)", ErrorRegexpParse, start)
 			}
 			content := regexp[start:i]
 			fa, err := buildFinateAutomatonFromBracket(content)
 			if err != nil {
-				return nil, fmt.Errorf("%w: %s (at %d)", RegexpParseError, err.Error(), i)
+				return nil, fmt.Errorf("%w: %s (at %d)", ErrorRegexpParse, err.Error(), i)
 			}
 			if needOperator {
 				operators = append(operators, '+')
@@ -331,7 +335,7 @@ func NewFinateAutomatonFromRegexp(regexp []rune) (*FiniteAutomaton, error) {
 			list = append(list, '*')
 		case '|':
 			if !needOperator {
-				return nil, fmt.Errorf("%w: current not need operator (at %d)", RegexpParseError, i)
+				return nil, fmt.Errorf("%w: current not need operator (at %d)", ErrorRegexpParse, i)
 			}
 			for len(operators) > 0 && operators[len(operators)-1] == '+' {
 				operators = operators[:len(operators)-1]
@@ -348,9 +352,10 @@ func NewFinateAutomatonFromRegexp(regexp []rune) (*FiniteAutomaton, error) {
 		case ')':
 			for {
 				if len(operators) == 0 {
-					return nil, fmt.Errorf("%w: bracket mismatch (at %d, left bracket not found)", RegexpParseError, i)
+					return nil, fmt.Errorf("%w: bracket mismatch (at %d, left bracket not found)", ErrorRegexpParse, i)
 				}
 				if operators[len(operators)-1] == '(' {
+					operators = operators[:len(operators)-1]
 					break
 				}
 				list = append(list, operators[len(operators)-1])
@@ -363,6 +368,9 @@ func NewFinateAutomatonFromRegexp(regexp []rune) (*FiniteAutomaton, error) {
 			}
 			needOperator = true
 			i++
+			if i >= len(regexp) {
+				return nil, fmt.Errorf("%w: eof", ErrorRegexpParse)
+			}
 			rn := regexp[i]
 			if rn != 'u' {
 				list = append(list, NewFinateAutomaton(&RuneRange{
@@ -371,9 +379,12 @@ func NewFinateAutomatonFromRegexp(regexp []rune) (*FiniteAutomaton, error) {
 				}))
 			} else {
 				i++
+				if i+3 >= len(regexp) {
+					return nil, fmt.Errorf("%w: eof", ErrorRegexpParse)
+				}
 				rn, err := strconv.ParseInt(string(regexp[i:i+4]), 16, 64)
 				if err != nil {
-					return nil, fmt.Errorf("%w: parse int error: %v (at %d)", RegexpParseError, string(regexp[i:i+4]), i)
+					return nil, fmt.Errorf("%w: parse int error: %v (at %d)", ErrorRegexpParse, string(regexp[i:i+4]), i)
 				}
 				list = append(list, NewFinateAutomaton(&RuneRange{
 					RuneStart: rune(rn),
@@ -381,6 +392,14 @@ func NewFinateAutomatonFromRegexp(regexp []rune) (*FiniteAutomaton, error) {
 				}))
 				i += 4
 			}
+		case '.':
+			if needOperator {
+				operators = append(operators, '+')
+			}
+			list = append(list, NewFinateAutomaton(&RuneRange{
+				RuneStart: 0,
+				RuneEnd:   utf8.MaxRune,
+			}))
 		default:
 			if needOperator {
 				operators = append(operators, '+')
@@ -395,7 +414,7 @@ func NewFinateAutomatonFromRegexp(regexp []rune) (*FiniteAutomaton, error) {
 	for len(operators) > 0 {
 		op := operators[len(operators)-1]
 		if op == '(' {
-			return nil, fmt.Errorf("%w: bracket mismatch (right bracket not found)", RegexpParseError)
+			return nil, fmt.Errorf("%w: bracket mismatch (right bracket not found)", ErrorRegexpParse)
 		}
 		operators = operators[:len(operators)-1]
 		list = append(list, op)
@@ -411,17 +430,17 @@ func NewFinateAutomatonFromRegexp(regexp []rune) (*FiniteAutomaton, error) {
 			switch op {
 			case '|':
 				if len(result) < 2 {
-					return nil, fmt.Errorf("%w: error while mergeOr", RegexpParseError)
+					return nil, fmt.Errorf("%w: error while mergeOr", ErrorRegexpParse)
 				}
 				result = append(result[:len(result)-2], result[len(result)-2].MergeOr(result[len(result)-1]))
 			case '+':
 				if len(result) < 2 {
-					return nil, fmt.Errorf("%w: error while mergeConnect", RegexpParseError)
+					return nil, fmt.Errorf("%w: error while mergeConnect", ErrorRegexpParse)
 				}
 				result = append(result[:len(result)-2], result[len(result)-2].MergeConnect(result[len(result)-1]))
 			case '*':
 				if len(result) < 1 {
-					return nil, fmt.Errorf("%w: error while mergeKleene", RegexpParseError)
+					return nil, fmt.Errorf("%w: error while mergeKleene", ErrorRegexpParse)
 				}
 				result[len(result)-1] = result[len(result)-1].MergeKleene()
 			default:
@@ -434,13 +453,13 @@ func NewFinateAutomatonFromRegexp(regexp []rune) (*FiniteAutomaton, error) {
 	if len(result) == 1 {
 		return result[0], nil
 	}
-	return nil, fmt.Errorf("%w unknown error", RegexpParseError)
+	return nil, fmt.Errorf("%w unknown error", ErrorRegexpParse)
 }
 
 // 能够从 NFA 的指定状态只通过ε转换到达的 NFA 状态的集合
 func (fa *FiniteAutomaton) closure(state int) set.IntSet {
 	res := set.NewIntSet()
-	for state > 0 {
+	for state >= 0 {
 		res.Put(state)
 		table := fa.JumpTables[state]
 		state = -1
@@ -515,7 +534,7 @@ func (fa *FiniteAutomaton) AsDFA() *FiniteAutomaton {
 		// 检查当前状态集是否可以接受
 		for state := range curState {
 			if fa.AcceptStates.Contains(state) {
-				result.AcceptStates.Put(state)
+				result.AcceptStates.Put(i)
 				result.AcceptStateTag[i] = fa.AcceptStateTag[state]
 				break
 			}
@@ -565,5 +584,5 @@ func (fa *FiniteAutomaton) NextState(state int, input rune) (int, error) {
 			return jumpMap.Target, nil
 		}
 	}
-	return -1, fmt.Errorf("%w: %v", FinateAutomatonInputError, input)
+	return -1, fmt.Errorf("%w: %v", ErrorFinateAutomatonInput, string(input))
 }

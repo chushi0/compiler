@@ -4,14 +4,14 @@ type IntSet map[int]interface{}
 
 func NewIntSet(val ...int) IntSet {
 	res := make(map[int]interface{})
-	for v := range val {
+	for _, v := range val {
 		res[v] = true
 	}
 	return res
 }
 
 func (s IntSet) Put(val ...int) {
-	for v := range val {
+	for _, v := range val {
 		s[v] = true
 	}
 }
